@@ -2,41 +2,23 @@ from tensorflow.keras.models import Sequential, load_model
 from keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
 from keras.callbacks import EarlyStopping
 from tensorflow.keras.layers import BatchNormalization, Dropout
-from tensorflow.keras.preprocessing import image
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.regularizers import l1_l2
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.applications import InceptionV3, VGG16
-from tensorflow.keras.applications.inception_v3 import InceptionV3
-from tensorflow.keras.applications.resnet50 import preprocess_input
 from tensorflow.keras.layers import GlobalAveragePooling2D
 from tensorflow.keras.models import Model
 
 from tensorflow.keras.applications import ResNet50
 
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, classification_report
+from sklearn.metrics import  classification_report
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import random as rnd
-import matplotlib.pyplot as plt
-from PIL import Image
-from tqdm import tqdm
-from numpy import expand_dims
-
-import os
-import requests
-import zipfile
-import glob
 
 
-from os import listdir
-from os.path import isdir, isfile, join
 
-from preprocessing import plot_augimages, test_classifier, plot_history, import_data, read_data
+from preprocessing import plot_augimages, plot_history, import_data, read_data
 
 # Import and read the data
 data_url = 'https://www.muratkoklu.com/datasets/vtdhnd10.php'
@@ -45,58 +27,65 @@ target_directory = 'data/'
 import_data(target_directory, data_url)
 
 data, labels = read_data(target_directory)
+df = pd.DataFrame({'path': data, 'class': labels})
 
 # Create train, test and val datasets
 
-X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.2)
-X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2)
+X_train, X_test, y_train, y_test = train_test_split(df['path'], df['class'], test_size=0.1)
+X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.11)
+
+df_train = pd.concat([X_train, y_train], axis =1)
+df_val = pd.concat([X_val, y_val], axis =1)
+df_test = pd.concat([X_test, y_test], axis =1)
 
 
 ### GENERATORS
 
-resnet50_datagen = ImageDataGenerator(
-    rotation_range=20,
+resnet50_train_datagen = ImageDataGenerator(
+    rotation_range=90,
     zoom_range=0.10,
-    brightness_range=[0.6,1.4],
-    channel_shift_range=0.7,
     width_shift_range=0.15,
     height_shift_range=0.15,
     shear_range=0.15,
     horizontal_flip=True,
-    fill_mode='nearest',
-    preprocessing_function=preprocess_input
+    fill_mode='nearest'
 )
 
-train_generator_resnet50 = resnet50_datagen.flow_from_dataframe(
-        pd.DataFrame({'path': X_train, 'class': y_train}),
+resnet50_datagen = ImageDataGenerator(preprocessing_function = tf.image.rgb_to_grayscale)
+
+train_generator_resnet50 = resnet50_train_datagen.flow_from_dataframe(
+        df_train,
+        #color_mode = 'grayscale',
         x_col='path',
         y_col='class',
         target_size=(227, 227),
-        batch_size=32,
+        batch_size=128,
         class_mode="categorical",
         shuffle=True,
 )
-val_generator_resnet50 = resnet50_datagen.flow_from_dataframe(
-        pd.DataFrame({'path': X_val, 'class': y_val}),
+val_generator_resnet50 = resnet50_datagen.flow_from_dataframe( #flow_from_directory
+        df_val,
+        #color_mode = 'grayscale',
         x_col='path',
         y_col='class',
         target_size=(227, 227),
-        batch_size=32,
+        batch_size=128,
         class_mode="categorical",
         shuffle=True,
 )
 test_generator_resnet50 = resnet50_datagen.flow_from_dataframe(
-        pd.DataFrame({'path': X_test, 'class': y_test}),
+        df_test,
+        #color_mode = 'grayscale',
         x_col='path',
         y_col='class',
         target_size=(227, 227),
-        batch_size=32,
+        batch_size=128,
         class_mode="categorical",
-        shuffle=True,
+        shuffle=False,
 )
 
-plot_augimages(np.random.choice(X_train, 10), resnet50_datagen)
 
+plot_augimages(np.random.choice(X_train, 10), resnet50_datagen)
 
 
 # exclude the top (output) layer of the model
@@ -109,33 +98,26 @@ for layer in resnet50.layers:
 
 # the last layer of the model is removed by taking the output from the last layer
 x = resnet50.layers[-1].output
-
-
 x = GlobalAveragePooling2D()(x)
+x = Dropout(0.2)(x)
 predictions = Dense(5, activation='softmax')(x)
 
 # the output tensor of the pre-trained ResNet-50 model
 model_resnet50 = Model(inputs = resnet50.input, outputs = predictions)
 
-# MODEL COMPILATION
 model_resnet50.compile(loss='categorical_crossentropy', optimizer="adam", metrics=['accuracy'])
-
-
-callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=4)
+callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=6)
 
 history_resnet50 = model_resnet50.fit(
       train_generator_resnet50,
       validation_data=val_generator_resnet50,
       epochs=50,
       callbacks=callback,
-      verbose=2, #verbose=2 means that training progress will be displayed for each epoch, including metrics like loss and accuracy.
+      verbose=2,
       )
 
 plot_history(history_resnet50)
 
-# Test model on test data
-predictions = model_resnet50.predict(test_generator_resnet50)
-predicted_labels = np.argmax(predictions, axis=1)
-true_labels = test_generator_resnet50.labels
-print(classification_report(true_labels, predicted_labels))
+# Display model statistics
+print(classification_report(test_generator_resnet50.labels, predictions))
 

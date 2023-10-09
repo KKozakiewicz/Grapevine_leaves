@@ -19,70 +19,40 @@ from os.path import isdir, isfile, join
 
 
 def plot_augimages(paths, datagen):
-    '''visualize augmented images generated using a Keras ImageDataGenerator'''
 
-    plt.figure(figsize = (14,28))
-    plt.suptitle('Augmented Images')
+  num_paths = len(paths)
 
-    midx = 0 # matplotlib index
-    for path in paths:
-        data = Image.open(path)
-        data = data.resize((224,224))
-        ''' add an extra dimension to the data array.
-        This step is often required to make the image compatible with the batch processing
-        expected by many deep learning models. The expand_dims function adds an additional
-        dimension at the beginning, effectively creating a batch of size 1 containing
-        the resized image.'''
-        samples = expand_dims(data, 0)
-        '''This line sets up an iterator (it) using a Keras ImageDataGenerator (datagen).
-        The iterator is configured to generate batches of data from the samples array,
-        with each batch containing one image (batch_size=1).
-        This iterator can be used to generate augmented versions of the image during training.'''
-        it = datagen.flow(samples, batch_size=1)
+  # Twórz subplot z 2x3 kafelkami
+  plt.figure(figsize=(10, num_paths*2))
 
-        # Show Original Image
-        plt.subplot(10,5, midx+1)
-        plt.imshow(data)
-        plt.axis('off')
+  for i, image_path in enumerate(paths):
+      # Wczytaj oryginalny obrazek
+      original_image = Image.open(image_path)
+      original_image = original_image.resize((224,224))
 
-        # Show Augmented Images
-        for idx, i in enumerate(range(4)):
-            midx += 1
-            plt.subplot(10,5, midx+1)
+      plt.subplot(num_paths, 5, 5 * i + 1)
+      plt.imshow(original_image)
+      plt.axis('off')
+      plt.title(f"Oryginalny {i+1}")
 
-            batch = it.next()
-            image = batch[0].astype('uint8') # extracts the image data from the batch
-            plt.imshow(image)
-            plt.axis('off')
-        midx += 1
+      # Konwertuj oryginalny obrazek do tablicy NumPy (multi-channel 2D image)
+      original_image_np = np.array(original_image)
 
-    plt.tight_layout()
-    plt.show()
+      # Dodaj dodatkowy wymiar, jeśli obraz jest 2D (np. szarość)
+      if len(original_image_np.shape) == 2:
+          original_image_np = np.expand_dims(original_image_np, axis=-1)
 
+      # Generuj i wyświetl 4 warianty obrazu
+      for j in range(4):
+          augmented_image = datagen.random_transform(original_image_np)
+          plt.subplot(num_paths, 5, i * 5 + j + 2)
+          plt.imshow(augmented_image)
+          plt.axis('off')
+          plt.title(f"Wariant {i+1}-{j+1}")
 
-def test_classifier(
-    generator,
-    y_test,
-    classifier,
-    scoring: str = 'f1-score'
-    ): # -> dict[str, Union[ClassifierMixin, float]]:
+  plt.tight_layout()
+  plt.show()
 
-    y_pred = classifier.predict(generator)
-
-    #  cross_val_accuracy = cross_val_score(classifier, x_train, y_train, cv=5, scoring='accuracy')
-    accuracy = accuracy_score(y_test, y_pred)
-    recall = recall_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
-    print(
-        f'Model: {classifier}\n\n'
-        f'Accuracy: {accuracy} \n\n',
-    #   f'Cross_val_accuracy: {cross_val_accuracy} \n\n',
-        f'Recall: {recall} \n\n',
-        f'Precision: {precision} \n\n',
-        f'f1 score: {f1}'
-        )
-    
 
 def plot_history(history):
     #Plot the Loss Curves
